@@ -101,3 +101,62 @@ def create_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     
     return df
+
+
+
+def get_daily_volatility(close: pd.Series, span: int = 100) -> pd.Series:
+    returns = np.log(close / close.shift(1))
+    return returns.ewm(span=span).std()
+
+def apply_triple_barrier(close: pd.Series, events: pd.DataFrame, pt_sl: list, molecule: pd.Series) -> pd.DataFrame:
+    out = events[['t1']].copy(deep=True)
+    
+    if pt_sl[0] > 0:
+        pt = pt_sl[0] * molecule
+    else:
+        pt = pd.Series(index=events.index)
+    
+    if pt_sl[1] > 0:
+        sl = -pt_sl[1] * molecule
+    else:
+        sl = pd.Series(index=events.index)
+
+    for loc, t1 in events['t1'].items():
+        df0 = close[loc:t1]
+        df0 = (df0 / close[loc] - 1)
+        out.loc[loc, 'sl'] = df0[df0 < sl[loc]].index.min()
+        out.loc[loc, 'pt'] = df0[df0 > pt[loc]].index.min()
+    
+    return out
+
+def create_labels(df: pd.DataFrame, regime: str) -> pd.Series:
+    close = df['close']
+    vol = get_daily_volatility(close)
+    
+    events = pd.DataFrame(index=df.index)
+    
+    avg_atr_as_pct = (df['atr'] / df['close']).rolling(window=100, min_periods=20).mean()
+    target_move_pct = 0.015
+    
+    look_forward_period = (target_move_pct / avg_atr_as_pct).round().fillna(12)
+    look_forward_period = look_forward_period.clip(lower=4, upper=24)
+    
+    t1_series = df.index.to_series().apply(lambda x: df.index[df.index.get_loc(x) + int(look_forward_period.get(x, 12))] if df.index.get_loc(x) + int(look_forward_period.get(x, 12)) < len(df.index) else None)
+    events['t1'] = t1_series
+    
+    events = events.dropna(subset=['t1'])
+
+    pt_sl_ratio = [2, 1] if regime == 'trending' else [1, 1]
+
+    
+    daily_vol = vol.reindex(events.index, method='ffill')
+    barriers = apply_triple_barrier(close, events, pt_sl_ratio, daily_vol)
+
+    barriers['out'] = 0
+    pt_win = barriers.pt.notna() & barriers.sl.notna() & (barriers.pt < barriers.sl) | barriers.pt.notna() & barriers.sl.isna()
+    sl_win = barriers.pt.notna() & barriers.sl.notna() & (barriers.sl < barriers.pt) | barriers.sl.notna() & barriers.pt.isna()
+    
+    barriers.loc[pt_win, 'out'] = 1
+    barriers.loc[sl_win, 'out'] = -1
+    
+    return barriers['out']

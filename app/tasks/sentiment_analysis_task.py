@@ -143,7 +143,6 @@ def update_news_sentiment():
             return
 
         text_response = response.text.strip()
-        logging.debug(f"Raw response from Gemini: {text_response}")
         
         match = re.search(r'```json\s*([\s\S]*?)\s*```', text_response)
         if match:

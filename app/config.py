@@ -1,5 +1,7 @@
+import os
 from pydantic import Field, PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
@@ -33,5 +35,10 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
 
     RISK_PER_TRADE: float = 0.01
+
+    CONSECUTIVE_LOSS_LIMIT: int = int(os.getenv("CONSECUTIVE_LOSS_LIMIT", 5))
+    TRADING_HALT_DURATION_SECONDS: int = int(os.getenv("TRADING_HALT_DURATION_SECONDS", 86400)) # 24 hours
+    POST_TRADE_COOLDOWN_SECONDS: int = int(os.getenv("POST_TRADE_COOLDOWN_SECONDS", 1800)) # 30 minutes
+    RISK_PER_TRADE_RATIO: float = float(os.getenv("RISK_PER_TRADE_RATIO", 0.01)) # 1% of equity
 
 settings = Settings()

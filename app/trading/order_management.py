@@ -1,4 +1,5 @@
 import sentry_sdk
+import logging
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
@@ -24,13 +25,13 @@ def execute_bracket_order(symbol: str, qty: float, side: str, stop_loss_price: f
     
     try:
         submitted_order = trading_client.submit_order(order_data=order_data)
-        print("--- SUBMITTING ORDER ---")
-        print(f"Order Data: {order_data.dict()}")
-        print(f"Order ID: {submitted_order.id}, Status: {submitted_order.status}")
-        print("--- ORDER SUBMITTED ---")
+        logging.info("--- SUBMITTING ORDER ---")
+        logging.info(f"Order Data: {order_data.dict()}")
+        logging.info(f"Order ID: {submitted_order.id}, Status: {submitted_order.status}")
+        logging.info("--- ORDER SUBMITTED ---")
         return submitted_order
     except APIError as e:
-        print(f"Error submitting bracket order for {symbol}: {e}. Falling back to separate orders.")
+        logging.error(f"Error submitting bracket order for {symbol}: {e}. Falling back to separate orders.")
         sentry_sdk.capture_exception(e)
         try:
             parent = trading_client.submit_order(order_data=LimitOrderRequest(
@@ -50,5 +51,5 @@ def execute_bracket_order(symbol: str, qty: float, side: str, stop_loss_price: f
             ))
             return parent
         except Exception as e2:
-            print(f"Fallback order failed for {symbol}: {e2}")
+            logging.error(f"Fallback order failed for {symbol}: {e2}")
             return None
