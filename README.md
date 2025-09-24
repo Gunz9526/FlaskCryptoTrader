@@ -33,37 +33,10 @@
 ## 아키텍처
 
 
-## 시작하기
-1.  **.env 파일 설정**: `.env.example` 파일을 복사하여 `.env` 파일을 만들고, Alpaca, Gemini API 키 및 데이터베이스 설정을 입력합니다.
-2.  **Docker 컨테이너 실행**:
-    ```bash
-    docker-compose up --build -d
-    ```
-3.  **데이터베이스 마이그레이션**:
-    ```bash
-    docker-compose exec web flask db upgrade
-    ```
-4.  **초기 데이터 수집 (API 호출)**:
-    ```bash
-    curl -X POST http://localhost:5000/api/collect-historical-data \
-         -H "Content-Type: application/json" \
-         -d '{"symbol": "BTC/USD", "years": 2}'
-    ```
-5.  **모델 학습 (API 호출)**:
-    ```bash
-    curl -X POST http://localhost:5000/api/train \
-         -H "X-Auth-Key: my-secret-training-key"
-    ```
-6.  **Grafana / Prometheus 대시보드 접속**:
-    - Grafana: `http://localhost:3000`
-    - Prometheus: `http://localhost:9090`
 
 ## API 엔드포인트
-주요 API 엔드포인트는 다음과 같습니다.
 - `POST /api/collect-historical-data`: 과거 데이터 대량 수집
 - `POST /api/train`: 모델 재학습 파이프라인 실행
 - `POST /api/trigger-trade-cycle`: AI 트레이딩 사이클 수동 실행
 - `GET /api/system-status`: 시스템 전반의 상태 조회
 - `GET /api/health`, `/api/ready`: 서비스 헬스 체크
-
-보다 자세한 내용은 `app/api/` 디렉토리의 각 파일을 참고하세요.
