@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import lightgbm as lgb
 import optuna
@@ -15,13 +14,15 @@ class LGBMTrainer(BaseTreeTrainer):
     def _prepare_model_specific_features(self, X: pd.DataFrame) -> pd.DataFrame:
         return X
 
-    def _train_model(self, X_train: pd.DataFrame, y_train: pd.Series, params: dict):
+    def _train_model(self, X_train: pd.DataFrame, y_train: pd.Series, params: dict, *, sample_weight=None, class_weight_map=None):
         final_params = {
             'objective': 'multiclass', 'metric': 'multi_logloss', 'num_class': 3,
-            'verbose': -1, 'n_jobs': -1, 'seed': 42, **params
+            'verbose': -1, 'n_jobs': -1, 'seed': 42,
+            **({'class_weight': class_weight_map} if class_weight_map else {}),
+            **params
         }
         model = lgb.LGBMClassifier(**final_params)
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train, sample_weight=sample_weight)
         return model
 
     def _get_objective_func(self, X_train, y_train, X_val, y_val):

@@ -82,26 +82,51 @@ class ModelHandler:
         return ensembled_probas, model_names
 
 
-    def get_ensemble_prediction(self, features: pd.DataFrame) -> int:
-        probas, _ = self._get_ensemble_probas(features)
-        if probas is None:
-            return 0
+    def get_ensemble_probas_for_df(self, features_df: pd.DataFrame) -> np.ndarray | None:
+        if not self.models:
+            return None
 
-        predicted_class = np.argmax(probas)
-        
-        if predicted_class == 0:
-            return -1
-        elif predicted_class == 2:
-            return 1
-        else:
-            return 0
+        weighted_probas = []
+        weights = []
+
+        for name, artifacts in self.models.items():
+            estimator = artifacts.get('calibrated_model') or artifacts.get('model')
+            if estimator is None:
+                logging.warning(f"No estimator found for model '{name}'")
+                continue
+
+            scaled_features = self._prepare_features(features_df, name, artifacts)
+            if scaled_features is None:
+                continue
+
+            try:
+                probas = estimator.predict_proba(scaled_features)
+                if probas.shape[1] != 3:
+                    logging.warning(f"Model '{name}' did not return 3-class probabilities. Shape: {probas.shape}")
+                    continue
+                w = max(float(artifacts.get('f1_score', 0.5)), 1e-6)
+                weighted_probas.append(probas)
+                weights.append(w)
+            except Exception as e:
+                logging.error(f"Error getting predictions from {name}: {e}", exc_info=True)
+
+        if not weighted_probas:
+            return None
+
+        w_arr = np.array(weights, dtype=float)
+        w_arr = w_arr / w_arr.sum()
+
+        stacked = np.stack(weighted_probas, axis=0)
+        ensembled = np.tensordot(w_arr, stacked, axes=(0, 0))
+        logging.info(f"Ensemble weights: {[round(w,3) for w in w_arr.tolist()]}")
+        return ensembled
 
     def get_prediction_confidence(self, features: pd.DataFrame) -> float:
-        probas, _ = self._get_ensemble_probas(features)
-        if probas is None:
+        probas = self.get_ensemble_probas_for_df(features)
+        if probas is None or probas.shape[0] == 0:
             return 0.0
-        
-        return float(np.max(probas))
+        return float(np.max(probas[0]))
+
 
     def get_ensemble_probas_for_df(self, features_df: pd.DataFrame) -> np.ndarray | None:
         if not self.models:
@@ -126,3 +151,12 @@ class ModelHandler:
 
         ensembled_probas = np.mean(np.stack(all_probas_list), axis=0)
         return ensembled_probas
+    
+    def get_ensemble_prediction(self, features: pd.DataFrame) -> int:
+        probas = self.get_ensemble_probas_for_df(features)
+        if probas is None or probas.shape[0] == 0:
+            logging.warning("No probabilities from ensemble. Returning neutral signal 0.")
+            return 0
+        idx = int(np.argmax(probas[0]))
+        mapping = {0: -1, 1: 0, 2: 1}
+        return mapping.get(idx, 0)

@@ -104,21 +104,19 @@ def run_evaluation_pipeline(symbol: str, model_type: str):
             else: trainer_instance = CatBoostTrainer(symbol, model_type)
 
             X_test_specific = trainer_instance._prepare_model_specific_features(X_test_raw)
-            
             scaler = artifacts['scaler']
             numeric_features = X_test_specific.select_dtypes(include=np.number).columns.tolist()
             X_test_scaled = X_test_specific.copy()
             if numeric_features:
                 X_test_scaled[numeric_features] = scaler.transform(X_test_specific[numeric_features])
-            
             X_test_final = X_test_scaled.reindex(columns=artifacts['features'], fill_value=0)
 
-            model = artifacts['model']
-            y_pred = model.predict(X_test_final)
-
+            estimator = artifacts.get('calibrated_model') or artifacts.get('model')
+            y_pred = estimator.predict(X_test_final)
             if y_pred.ndim > 1:
                 y_pred = y_pred.flatten()
-            
+
+
             report = classification_report(y_test, y_pred, target_names=['Sell', 'Neutral', 'Buy'], output_dict=True, zero_division=0)
             plot_confusion_matrix(y_test, y_pred, name, symbol, model_type)
             
@@ -139,7 +137,8 @@ def run_evaluation_pipeline(symbol: str, model_type: str):
             logging.error(f"Error evaluating single model {name}: {e}", exc_info=True)
 
     try:
-        handler = ModelHandler(symbol, model_type)
+        handler = ModelHandler(symbol=symbol, model_type=model_type)
+ 
         if handler.models:
             ensemble_probas = handler.get_ensemble_probas_for_df(X_test_raw)
             if ensemble_probas is not None:

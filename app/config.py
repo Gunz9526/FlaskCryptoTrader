@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     SENTRY_DSN: str | None = None
 
+    PREDICTION_MIN_CONFIDENCE: float = float(os.getenv("PREDICTION_MIN_CONFIDENCE", 0.55))
+
     RISK_PER_TRADE: float = 0.01
 
     CONSECUTIVE_LOSS_LIMIT: int = int(os.getenv("CONSECUTIVE_LOSS_LIMIT", 5))

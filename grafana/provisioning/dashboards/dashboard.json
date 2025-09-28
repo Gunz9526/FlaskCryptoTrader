@@ -1,70 +1,131 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
   "links": [],
   "liveNow": false,
   "panels": [
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "id": 20,
+      "id": 1,
       "panels": [],
-      "title": "I. System Health & Resources",
+      "title": "0) How to read this dashboard",
+      "type": "row"
+    },
+    {
+      "type": "text",
+      "title": "지표 해석 가이드",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "mode": "markdown",
+        "content": "- App Up: Prometheus가 대상(Flask/Celery)을 정상 스크레이프하면 1입니다. 내부 로직의 건강이 아니라 '스크레이프 성공 여부'를 뜻합니다.\n- Data Freshness: 마지막 데이터 수집 지표 샘플로부터 지난 시간(초). 값이 커지면 수집이 멈췄을 가능성이 큽니다.\n- Data Ingestion Rate: 최근 5분간 DB에 저장된 시세 행 수의 초당 증가율입니다.\n- API p95 Latency: 상위 5% 요청의 지연 시간. 트래픽 급증/병목을 빠르게 식별할 수 있습니다.\n- API Error Rate: 전체 대비 5xx 비율(%). 1% 이상이면 즉시 점검 권장.\n- Market Regime: 현재 심볼의 레짐(0~5 스케일). 전략 분기 검증에 사용합니다.\n"
+      }
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 3,
+      "panels": [],
+      "title": "I) App Health",
       "type": "row"
     },
     {
       "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": { "unit": "percentunit" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
-      "id": 14,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 10 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        {
-          "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\"python-trader.*\"}[2m])) by (name) * 100",
-          "legendFormat": "{{name}}",
-          "refId": "A"
-        }
+        { "expr": "up{job=~\"$component\"}", "legendFormat": "{{job}}", "refId": "A" }
       ],
-      "title": "CPU Usage (%)",
+      "title": "App Up (Scrape success: 1=OK, 0=DOWN)",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 10 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (job) (scrape_duration_seconds{job=~\"$component\"})", "legendFormat": "{{job}}", "refId": "A" }
+      ],
+      "title": "Scrape Duration (s)",
       "type": "timeseries"
     },
     {
       "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": { "unit": "bytes" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
-      "id": 15,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 10 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (job) (time() - max_over_time(timestamp(up{job=~\"$component\"}[10m])))", "legendFormat": "{{job}}", "refId": "A" }
+      ],
+      "title": "Last Scrape Age (s)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 7,
+      "panels": [],
+      "title": "II) Data Freshness & Ingestion",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 16 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "hidden" } },
+      "targets": [
+        { "expr": "time() - max_over_time(timestamp(data_pipeline_rows_saved_total{symbol=\"$symbol\", timeframe=\"15m\"}[6h]))", "refId": "A" }
+      ],
+      "title": "15m Ingestion Staleness (s)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 16 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "hidden" } },
+      "targets": [
+        { "expr": "time() - max_over_time(timestamp(data_pipeline_rows_saved_total{symbol=\"$symbol\", timeframe=\"1h\"}[24h]))", "refId": "A" }
+      ],
+      "title": "1h Ingestion Staleness (s)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "expr": "sum(container_memory_usage_bytes{name=~\"python-trader.*\"}) by (name)",
-          "legendFormat": "{{name}}",
+          "expr": "sum(rate(data_pipeline_rows_saved_total{symbol=\"$symbol\"}[5m])) by (timeframe)",
+          "legendFormat": "{{timeframe}}",
           "refId": "A"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Data Ingestion Rate (rows/sec, 5m)",
       "type": "timeseries"
     },
+
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
-      "id": 22,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "id": 11,
       "panels": [],
-      "title": "II. AI & Trading Status",
+      "title": "III) Market Regime & AI Signals",
       "type": "row"
     },
     {
@@ -73,170 +134,130 @@
         "defaults": {
           "mappings": [
             {
+              "type": "value",
               "options": {
                 "0": { "color": "yellow", "text": "Chaotic" },
-                "1": { "color": "light-green", "text": "Ranging" },
-                "2": { "color": "orange", "text": "Trending" }
-              },
-              "type": "value"
+                "1": { "color": "light-blue", "text": "Ranging (Squeeze)" },
+                "2": { "color": "green", "text": "Ranging (Quiet)" },
+                "3": { "color": "orange", "text": "Ranging (Volatile)" },
+                "4": { "color": "purple", "text": "Trending (Weak)" },
+                "5": { "color": "red", "text": "Trending (Strong)" }
+              }
             }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "light-blue", "value": null },
-              { "color": "yellow", "value": 0 },
-              { "color": "light-green", "value": 1 },
-              { "color": "orange", "value": 2 }
-            ]
-          }
+          ]
         }
       },
-      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 10 },
-      "id": 6,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "pluginVersion": "10.4.1",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 25 },
+      "id": 12,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        {
-          "expr": "market_regime_current",
-          "refId": "A"
-        }
+        { "expr": "market_regime_current{symbol=\"$symbol\"}", "refId": "A" }
       ],
       "title": "Current Market Regime",
       "type": "stat"
     },
     {
       "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 10 },
-      "id": 12,
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 25 },
+      "id": 13,
       "options": {
         "displayLabels": ["name", "percent"],
         "pieType": "pie",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
-      "pluginVersion": "10.4.1",
       "targets": [
-        {
-          "expr": "sum(increase(ai_model_prediction_total[1h])) by (signal)",
-          "legendFormat": "{{signal}}",
-          "refId": "A"
-        }
+        { "expr": "sum(increase(ai_model_prediction_total{symbol=\"$symbol\"}[1h])) by (signal)", "legendFormat": "{{signal}}", "refId": "A" }
       ],
       "title": "AI Signal Distribution (Last 1h)",
       "type": "piechart"
     },
     {
-      "id": 24,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
-      "type": "table",
-      "title": "Recent Market Data",
-      "datasource": "TimescaleDB",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 25 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
-        {
-          "format": "table",
-          "group": [],
-          "metricColumn": "none",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  timestamp AS \"time\",\n  symbol,\n  timeframe,\n  close,\n  volume\nFROM market_data\nORDER BY timestamp DESC\nLIMIT 10",
-          "refId": "A",
-          "select": [
-            [{ "params": ["value"], "type": "column" }]
-          ],
-          "table": "market_data",
-          "timeColumn": "timestamp",
-          "where": [
-            { "name": "$__timeFilter", "params": [], "type": "macro" }
-          ]
-        }
-      ]
+        { "expr": "sum by (signal) (increase(ai_model_prediction_total{symbol=\"$symbol\"}[24h]))", "legendFormat": "{{signal}}", "refId": "A" }
+      ],
+      "title": "AI Signal Volume (Last 24h)",
+      "type": "timeseries"
     },
+
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
-      "id": 23,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "id": 15,
       "panels": [],
-      "title": "III. Performance & Data Pipeline",
+      "title": "IV) API SLI",
       "type": "row"
     },
     {
       "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
-      "id": 4,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 32 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
-        {
-          "expr": "sum(rate(flask_http_requests_total[1m])) by (status)",
-          "legendFormat": "status {{status}}",
-          "refId": "A"
-        }
+        { "expr": "sum(rate(flask_http_request_total[1m])) by (status)", "legendFormat": "status={{status}}", "refId": "A" }
       ],
-      "title": "API Request Rate",
+      "title": "API Request Rate (req/s, 1m)",
       "type": "timeseries"
     },
     {
       "datasource": "Prometheus",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
-      "id": 8,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 32 },
+      "id": 17,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
-        {
-          "expr": "sum(rate(data_pipeline_rows_saved_total[5m])) by (timeframe)",
-          "legendFormat": "{{timeframe}}",
-          "refId": "A"
-        }
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(flask_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "A" }
       ],
-      "title": "Data Ingestion Rate (rows/sec)",
+      "title": "API Latency (p95, 5m)",
       "type": "timeseries"
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
-      "id": 21,
-      "panels": [],
-      "title": "IV. Raw Logs",
-      "type": "row"
-    },
-    {
-      "datasource": "Loki",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 28 },
-      "id": 25,
-      "options": {
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 32 },
+      "id": 18,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
-        {
-          "expr": "{service=~\"app|celery_worker|celery_beat\"}",
-          "refId": "A"
-        }
+        { "expr": "100 * sum(rate(flask_http_request_total{status=~\"5..\"}[5m])) / sum(rate(flask_http_request_total[5m]))", "legendFormat": "5xx %", "refId": "A" }
       ],
-      "title": "Application Logs",
-      "type": "logs"
+      "title": "API Error Rate (%)",
+      "type": "timeseries",
+      "fieldConfig": { "defaults": { "unit": "percent" } }
     }
   ],
   "refresh": "10s",
   "schemaVersion": 37,
   "style": "dark",
   "tags": [],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "symbol",
+        "type": "query",
+        "label": "Symbol",
+        "datasource": "Prometheus",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "query": "label_values(market_regime_current, symbol)"
+      },
+      {
+        "name": "component",
+        "type": "query",
+        "label": "Component",
+        "datasource": "Prometheus",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "query": "label_values(up, job)",
+        "regex": "/flask-app|celery-worker|celery-beat|cadvisor|prometheus/"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
-  "timepicker": {},
   "timezone": "browser",
   "title": "AI Trading System Overview",
-  "uid": "unique-dashboard-id",
-  "version": 3
+  "uid": "ai-trading-dashboard",
+  "version": 1
 }

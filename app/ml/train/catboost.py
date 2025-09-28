@@ -26,17 +26,26 @@ class CatBoostTrainer(BaseTreeTrainer):
             self.categorical_features_names = ['rsi_binned']
         return X_copy
 
-    def _train_model(self, X_train: pd.DataFrame, y_train: pd.Series, params: dict):
+    def _train_model(self, X_train: pd.DataFrame, y_train: pd.Series, params: dict, *, sample_weight=None, class_weight_map=None):
+        class_weights = None
+        if class_weight_map:
+            keys = sorted(class_weight_map.keys())
+            class_weights = [class_weight_map[k] for k in keys]
+
         final_params = {
-            'loss_function': 'MultiClass', 'eval_metric': 'MultiClass',
-            'random_seed': 42, 'verbose': 0,
+            'loss_function': 'MultiClass',
+            'eval_metric': 'MultiClass',
+            'random_seed': 42,
+            'verbose': 0,
             'allow_writing_files': False,
+            **({'class_weights': class_weights} if class_weights else {}),
             **params
         }
         model = CatBoostClassifier(**final_params)
-        model.fit(X_train, y_train, cat_features=self.categorical_features_names)
+        cat_idx = [X_train.columns.get_loc(c) for c in self.categorical_features_names] if self.categorical_features_names else None
+        model.fit(X_train, y_train, cat_features=cat_idx, sample_weight=sample_weight, verbose=False)
         return model
-    
+
     def _get_objective_func(self, X_train, y_train, X_val, y_val):
         
         categorical_features_indices = [

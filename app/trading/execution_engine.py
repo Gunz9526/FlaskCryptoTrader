@@ -3,8 +3,9 @@ import logging
 from alpaca.trading.client import TradingClient
 from sqlalchemy import select, text
 from app.config import settings
-from app.models import MarketData
 from app.extensions import db
+from app.config import settings
+from app.ml.model_handler import ModelHandler
 from app.redis_client import redis_client
 from app.metrics import AI_PREDICTION_COUNTER
 from app.trading.feature_engineering import prepare_features_for_model, create_advanced_features
@@ -76,6 +77,10 @@ def run_trading_cycle_for_symbol(symbol: str):
         model_handler = ModelHandler(symbol=symbol, model_type=base_model_type)
         signal = model_handler.get_ensemble_prediction(features=latest_features)
         confidence = model_handler.get_prediction_confidence(features=latest_features)
+        min_conf = float(getattr(settings, "PREDICTION_MIN_CONFIDENCE", 0.55))
+        if confidence < min_conf:
+            logging.warning(f"Prediction confidence {confidence:.3f} below threshold {min_conf:.2f}. Skipping order.")
+            return
         
         signal_str = {1: 'buy', -1: 'sell', 0: 'neutral'}.get(signal, 'unknown')
         AI_PREDICTION_COUNTER.labels(symbol=symbol, regime=raw_regime, signal=signal_str).inc()

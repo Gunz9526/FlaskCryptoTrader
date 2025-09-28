@@ -8,6 +8,8 @@ import lightgbm as lgb
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import f1_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.utils.class_weight import compute_class_weight
 
 from app.trading.feature_engineering import add_technical_indicators, create_advanced_features, prepare_features_for_model, create_labels
 
@@ -78,35 +80,49 @@ class BaseTreeTrainer(BaseModelTrainer):
             X_test_scaled[numeric_features] = self.scaler.transform(X_test[numeric_features])
             
         return X_train_scaled, X_val_scaled, X_test_scaled
+    
+    
+    def _compute_class_weights(self, y: pd.Series) -> tuple[dict[int, float], np.ndarray]:
+        classes = np.array(sorted(pd.unique(y)))
+        weights = compute_class_weight(class_weight='balanced', classes=classes, y=y)
+        class_weight_map = {int(c): float(w) for c, w in zip(classes, weights)}
+        sample_weight = y.map(class_weight_map).astype(float).values
+        return class_weight_map, sample_weight
 
-    def _save_artifacts(self, model, f1_score: float, timestamp: pd.Timestamp):
-        model_dir = f"./models/{self.symbol.replace('/', '_').lower()}"
+
+    def _save_artifacts(self, model, calibrated_model, f1: float, trained_until, scaler: StandardScaler, features: list[str]):
+        symbol_path = self.symbol.replace('/', '_').lower()
+        model_dir = os.path.join("models", symbol_path)
         os.makedirs(model_dir, exist_ok=True)
-        artifact_path = f"{model_dir}/{self.model_type}_{self.model_name}_artifact.pkl"
-        
-        artifacts = {
-            'model': model, 'scaler': self.scaler, 'features': self.features_order,
-            'f1_score': f1_score, 'timestamp': timestamp
-        }
-        joblib.dump(artifacts, artifact_path)
-        logging.info(f"[{self.model_name}] Artifacts saved to {artifact_path}")
 
+        filename = f"{self.model_type}_{self.model_name}_artifact.pkl"
+        path = os.path.join(model_dir, filename)
+
+        joblib.dump({
+            "model": model,
+            "calibrated_model": calibrated_model,
+            "scaler": scaler,
+            "features": features,
+            "f1_score": f1,
+            "trained_until": trained_until
+        }, path)
+        logging.info(f"[{self.model_name}] Artifacts saved to {path}")
+
+
+    
     def train(self, df_15m: pd.DataFrame, df_1h: pd.DataFrame):
-        logging.info(f"Starting training for {self.model_name} on {self.symbol} ({self.model_type})...")
         try:
             X, y = self._prepare_base_features_and_labels(df_15m, df_1h)
-            X_train, X_val, X_test, y_train, y_val, y_test = self._split_data(X, y)
 
-            train_classes = y_train.nunique()
-            val_classes = y_val.nunique()
-            logging.info(f"[{self.model_name}] Class distribution in y_train: {y_train.value_counts().to_dict()} ({train_classes} unique classes)")
-            logging.info(f"[{self.model_name}] Class distribution in y_val: {y_val.value_counts().to_dict()} ({val_classes} unique classes)")
+            tscv = TimeSeriesSplit(n_splits=self.n_splits)
+            train_index, test_index = list(tscv.split(X))[-1]
+            X_trainval, X_test = X.iloc[train_index], X.iloc[test_index]
+            y_trainval, y_test = y.iloc[train_index], y.iloc[test_index]
 
-            if train_classes < 3:
-                logging.error(f"[{self.model_name}] Training data only has {train_classes} classes, but 3 are required. Aborting training.")
-                return
-            if val_classes < 3:
-                logging.warning(f"[{self.model_name}] Validation data only has {val_classes} classes. This may affect early stopping and tuning.")
+            tscv_inner = TimeSeriesSplit(n_splits=3)
+            inner_train_idx, inner_val_idx = list(tscv_inner.split(X_trainval))[-1]
+            X_train, X_val = X_trainval.iloc[inner_train_idx], X_trainval.iloc[inner_val_idx]
+            y_train, y_val = y_trainval.iloc[inner_train_idx], y_trainval.iloc[inner_val_idx]
 
             X_train = self._prepare_model_specific_features(X_train)
             X_val = self._prepare_model_specific_features(X_val)
@@ -118,20 +134,34 @@ class BaseTreeTrainer(BaseModelTrainer):
             best_params = self._tune_hyperparams(X_train_scaled, y_train, X_val_scaled, y_val)
             logging.info(f"[{self.model_name}] Best params found: {best_params}")
 
-            X_train_full_scaled = pd.concat([X_train_scaled, X_val_scaled])
+            X_train_full = pd.concat([X_train_scaled, X_val_scaled])
             y_train_full = pd.concat([y_train, y_val])
-            
-            logging.info(f"[{self.model_name}] Training final model with best params...")
-            final_model = self._train_model(X_train_full_scaled, y_train_full, best_params)
 
-            y_pred = final_model.predict(X_test_scaled)
+            class_weight_map, sample_weight_full = self._compute_class_weights(y_train_full)
+
+            logging.info(f"[{self.model_name}] Training final model with class/sample weights...")
+            base_model = self._train_model(
+                X_train_full, y_train_full, best_params,
+                sample_weight=sample_weight_full,
+                class_weight_map=class_weight_map
+            )
+
+            logging.info(f"[{self.model_name}] Fitting calibration model (isotonic, cv='prefit') on validation split...")
+            calibrator = CalibratedClassifierCV(estimator=base_model, cv='prefit', method='isotonic')
+            calibrator.fit(X_val_scaled, y_val)
+
+            y_pred = calibrator.predict(X_test_scaled)
+            if y_pred.ndim > 1:
+                y_pred = y_pred.flatten()
             f1 = f1_score(y_test, y_pred, average='weighted')
-            logging.info(f"[{self.model_name}] Final model F1 Score on test set: {f1:.4f}")
+            logging.info(f"[{self.model_name}] Final calibrated F1 on test set: {f1:.4f}")
 
-            self._save_artifacts(final_model, f1, X_train_full_scaled.index[-1])
+            self._save_artifacts(base_model, calibrator, f1, X_train_full.index[-1], self.scaler, self.features_order)
             logging.info(f"[{self.model_name}] Training completed and artifacts saved.")
         except Exception as e:
             logging.error(f"Failed to train {self.model_name} for {self.symbol}/{self.model_type}: {e}", exc_info=True)
+
+
 
     @abstractmethod
     def _prepare_model_specific_features(self, X: pd.DataFrame) -> pd.DataFrame:
