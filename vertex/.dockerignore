@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+.git/
+.vscode/
+cache/
+.oci/
+hyperparams/
+models/
+reports/
+*.db
+*.db-journal

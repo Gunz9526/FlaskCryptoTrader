@@ -144,7 +144,7 @@ ENV/
 env.bak/
 venv.bak/
 test_result/
-vertex/
+vertex/*/
 
 # Spyder project settings
 .spyderproject

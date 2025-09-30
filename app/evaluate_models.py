@@ -84,9 +84,20 @@ def run_evaluation_pipeline(symbol: str, model_type: str):
     data_preparer = LGBMTrainer(symbol, model_type)
     X_raw, y_raw = data_preparer._prepare_base_features_and_labels(df_15m, df_1h)
     
-    tscv = TimeSeriesSplit(n_splits=5)
-    test_indices = list(tscv.split(X_raw))[-1]
-    X_test_raw, y_test = X_raw.iloc[test_indices], y_raw.iloc[test_indices]
+    n_samples = len(X_raw)
+    max_splits = max(1, min(5, n_samples - 1))
+    tscv = TimeSeriesSplit(n_splits=max_splits)
+    try:
+        splits = list(tscv.split(X_raw))
+    except ValueError as exc:
+        logging.error(f"TimeSeriesSplit failed: {exc}")
+        return
+    if not splits:
+        logging.error("Not enough samples to perform TimeSeriesSplit.")
+        return
+    _, test_idx = splits[-1]
+
+    X_test_raw, y_test = X_raw.iloc[test_idx], y_raw.iloc[test_idx]
     
     price_df_test = df_15m.loc[X_test_raw.index]
     

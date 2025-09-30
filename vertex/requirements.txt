@@ -1,0 +1,15 @@
+# oci==2.159.0
+pandas==2.3.2
+scikit-learn==1.7.1
+python-dotenv==1.1.1
+joblib==1.5.2
+alpaca-py==0.42.0
+onnx==1.19.0
+onnxscript==0.4.0
+matplotlib==3.10.6
+seaborn==0.13.2
+onnxruntime==1.22.1
+optuna==4.5.0
+pyarrow==21.0.0
+numpy==2.3.3
+TA-Lib==0.6.7
